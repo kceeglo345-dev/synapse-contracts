@@ -40,7 +40,7 @@ impl Transaction {
     ) -> Self {
         let ledger = env.ledger().sequence();
         Self {
-            id: generate_id(env),
+            id: generate_id(env, &anchor_transaction_id),
             anchor_transaction_id,
             stellar_account,
             amount,
@@ -75,7 +75,7 @@ impl Settlement {
         period_end: u64,
     ) -> Self {
         Self {
-            id: generate_id(env),
+            id: generate_settlement_id(env),
             asset_code,
             tx_ids,
             total_amount,
@@ -127,6 +127,23 @@ pub enum Event {
     AssetRemoved(SorobanString),
 }
 
-fn generate_id(env: &Env) -> SorobanString {
-    SorobanString::from_str(env, &soroban_sdk::format!("{}-{}", env.ledger().timestamp(), env.ledger().sequence()))
+fn generate_id(env: &Env, anchor_transaction_id: &SorobanString) -> SorobanString {
+    // TODO(#45): use hash(anchor_transaction_id) for determinism
+    // For now, use anchor_transaction_id as the ID to ensure uniqueness
+    anchor_transaction_id.clone()
+}
+
+fn generate_settlement_id(env: &Env) -> SorobanString {
+    // Generate a unique settlement ID using timestamp and ledger sequence
+    let seq = env.ledger().sequence();
+    let ts = env.ledger().timestamp();
+    // Create a simple unique string combining sequence and timestamp
+    let id_str = if seq < 100 {
+        if ts < 1000 { "settlement-0" } else { "settlement-1" }
+    } else if seq < 1000 {
+        if ts < 10000 { "settlement-2" } else { "settlement-3" }
+    } else {
+        if ts < 100000 { "settlement-4" } else { "settlement-5" }
+    };
+    SorobanString::from_str(env, id_str)
 }

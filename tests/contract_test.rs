@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use soroban_sdk::{testutils::Address as _, Address, Env, String as SorobanString, vec};
-use crate::{SynapseContract, SynapseContractClient};
+use synapse_contract::{SynapseContract, SynapseContractClient};
 
 fn setup(env: &Env) -> (Address, SynapseContractClient) {
     env.mock_all_auths();
@@ -229,3 +229,88 @@ fn finalize_settlement_stores_record() {
 // TODO(#34): test that settling an already-settled tx panics
 // TODO(#36): test that mismatched total_amount panics
 // TODO(#37): test that period_start > period_end panics
+
+#[test]
+#[should_panic(expected = "total_amount mismatch")]
+fn finalize_settlement_panics_on_total_mismatch() {
+    let env = Env::default();
+    let (admin, client) = setup(&env);
+    let relayer = Address::generate(&env);
+    client.grant_relayer(&admin, &relayer);
+    client.add_asset(&admin, &usd(&env));
+    let tx_id = client.register_deposit(&relayer, &SorobanString::from_str(&env, "a4"),
+        &Address::generate(&env), &100_000_000, &usd(&env));
+    client.mark_processing(&relayer, &tx_id);
+    client.mark_completed(&relayer, &tx_id);
+    // Pass incorrect total_amount (200_000_000 instead of 100_000_000)
+    client.finalize_settlement(&relayer, &usd(&env),
+        &vec![&env, tx_id], &200_000_000, &0u64, &1u64);
+}
+
+#[test]
+#[should_panic(expected = "total_amount mismatch")]
+fn finalize_settlement_panics_on_total_mismatch_multiple_txs() {
+    let env = Env::default();
+    let (admin, client) = setup(&env);
+    let relayer = Address::generate(&env);
+    client.grant_relayer(&admin, &relayer);
+    client.add_asset(&admin, &usd(&env));
+    
+    let tx_id1 = client.register_deposit(&relayer, &SorobanString::from_str(&env, "a5"),
+        &Address::generate(&env), &50_000_000, &usd(&env));
+    let tx_id2 = client.register_deposit(&relayer, &SorobanString::from_str(&env, "a6"),
+        &Address::generate(&env), &75_000_000, &usd(&env));
+    
+    client.mark_processing(&relayer, &tx_id1);
+    client.mark_completed(&relayer, &tx_id1);
+    client.mark_processing(&relayer, &tx_id2);
+    client.mark_completed(&relayer, &tx_id2);
+    
+    // Correct sum is 125_000_000, but pass 100_000_000
+    client.finalize_settlement(&relayer, &usd(&env),
+        &vec![&env, tx_id1, tx_id2], &100_000_000, &0u64, &1u64);
+}
+
+#[test]
+fn finalize_settlement_succeeds_with_correct_total() {
+    let env = Env::default();
+    let (admin, client) = setup(&env);
+    let relayer = Address::generate(&env);
+    client.grant_relayer(&admin, &relayer);
+    client.add_asset(&admin, &usd(&env));
+    
+    let tx_id1 = client.register_deposit(&relayer, &SorobanString::from_str(&env, "a7"),
+        &Address::generate(&env), &50_000_000, &usd(&env));
+    let tx_id2 = client.register_deposit(&relayer, &SorobanString::from_str(&env, "a8"),
+        &Address::generate(&env), &75_000_000, &usd(&env));
+    
+    client.mark_processing(&relayer, &tx_id1);
+    client.mark_completed(&relayer, &tx_id1);
+    client.mark_processing(&relayer, &tx_id2);
+    client.mark_completed(&relayer, &tx_id2);
+    
+    // Correct sum is 125_000_000
+    let s_id = client.finalize_settlement(&relayer, &usd(&env),
+        &vec![&env, tx_id1, tx_id2], &125_000_000, &0u64, &1u64);
+    let s = client.get_settlement(&s_id);
+    assert_eq!(s.total_amount, 125_000_000);
+}
+
+#[test]
+fn finalize_settlement_with_single_tx_correct_total() {
+    let env = Env::default();
+    let (admin, client) = setup(&env);
+    let relayer = Address::generate(&env);
+    client.grant_relayer(&admin, &relayer);
+    client.add_asset(&admin, &usd(&env));
+    
+    let tx_id = client.register_deposit(&relayer, &SorobanString::from_str(&env, "a9"),
+        &Address::generate(&env), &100_000_000, &usd(&env));
+    client.mark_processing(&relayer, &tx_id);
+    client.mark_completed(&relayer, &tx_id);
+    
+    let s_id = client.finalize_settlement(&relayer, &usd(&env),
+        &vec![&env, tx_id], &100_000_000, &0u64, &1u64);
+    let s = client.get_settlement(&s_id);
+    assert_eq!(s.total_amount, 100_000_000);
+}

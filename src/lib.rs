@@ -165,6 +165,17 @@ impl SynapseContract {
         period_end: u64,
     ) -> SorobanString {
         require_relayer(&env, &caller);
+        
+        // Verify total_amount matches sum of all transaction amounts
+        let mut sum: i128 = 0;
+        for tx_id in tx_ids.iter() {
+            let tx = deposits::get(&env, &tx_id);
+            sum = sum.checked_add(tx.amount).expect("amount overflow");
+        }
+        if sum != total_amount {
+            panic!("total_amount mismatch");
+        }
+        
         let s = Settlement::new(&env, asset_code.clone(), tx_ids, total_amount, period_start, period_end);
         let id = s.id.clone();
         settlements::save(&env, &s);
