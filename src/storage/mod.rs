@@ -95,6 +95,16 @@ pub mod settlements {
     }
 }
 
+pub mod max_deposit {
+    use super::*;
+    pub fn set(env: &Env, amount: i128) {
+        env.storage().instance().set(&StorageKey::MaxDeposit, &amount);
+    }
+    pub fn get(env: &Env) -> Option<i128> {
+        env.storage().instance().get(&StorageKey::MaxDeposit)
+    }
+}
+
 pub mod dlq {
     use super::*;
     pub fn push(env: &Env, entry: &DlqEntry) {

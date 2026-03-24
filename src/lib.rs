@@ -8,7 +8,7 @@ mod types;
 use access::{require_admin, require_relayer};
 use events::emit;
 use soroban_sdk::{contract, contractimpl, Address, Env, String as SorobanString, Vec};
-use storage::{assets, deposits, dlq, relayers, settlements};
+use storage::{assets, deposits, dlq, max_deposit, relayers, settlements};
 use types::{DlqEntry, Event, Settlement, Transaction, TransactionStatus};
 
 #[contract]
@@ -72,8 +72,18 @@ impl SynapseContract {
         emit(&env, Event::AssetRemoved(asset_code));
     }
 
+    pub fn set_max_deposit(env: Env, caller: Address, amount: i128) {
+        require_admin(&env, &caller);
+        if amount <= 0 { panic!("max deposit must be positive") }
+        max_deposit::set(&env, amount);
+    }
+
+    pub fn get_max_deposit(env: Env) -> Option<i128> {
+        max_deposit::get(&env)
+    }
+
     // TODO(#15): enforce minimum deposit amount (configurable by admin)
-    // TODO(#16): enforce maximum deposit amount (configurable by admin)
+    // TODO(#16): enforce maximum deposit amount (configurable by admin) — DONE
     // TODO(#17): validate anchor_transaction_id is non-empty
     // TODO(#18): add `memo` field support (mirrors synapse-core CallbackPayload)
     // TODO(#19): add `memo_type` field support (text | hash | id)
@@ -90,6 +100,10 @@ impl SynapseContract {
     ) -> SorobanString {
         require_relayer(&env, &caller);
         assets::require_allowed(&env, &asset_code);
+
+        if let Some(max) = max_deposit::get(&env) {
+            if amount > max { panic!("amount exceeds max deposit") }
+        }
 
         if let Some(existing) = deposits::find_by_anchor_id(&env, &anchor_transaction_id) {
             return existing;
@@ -176,7 +190,7 @@ impl SynapseContract {
     // TODO(#41): add `get_admin()` query
     // TODO(#42): add `is_paused()` query
     // TODO(#43): add `get_min_deposit()` query
-    // TODO(#44): add `get_max_deposit()` query
+    // TODO(#44): add `get_max_deposit()` query — DONE
 
     pub fn get_transaction(env: Env, tx_id: SorobanString) -> Transaction {
         deposits::get(&env, &tx_id)
