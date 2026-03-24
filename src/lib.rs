@@ -160,8 +160,20 @@ impl SynapseContract {
     // TODO(#32): only admin OR original relayer should be able to retry
     pub fn retry_dlq(env: Env, caller: Address, tx_id: SorobanString) {
         require_admin(&env, &caller);
-        let _ = (env, tx_id);
-        panic!("not implemented")
+        
+        let mut entry = dlq::get(&env, &tx_id).expect("dlq entry not found");
+        let mut tx = deposits::get(&env, &tx_id);
+        
+        tx.status = TransactionStatus::Pending;
+        tx.updated_ledger = env.ledger().sequence();
+        
+        entry.retry_count += 1;
+        entry.last_retry_ledger = env.ledger().sequence();
+        
+        deposits::save(&env, &tx);
+        dlq::push(&env, &entry);
+        
+        emit(&env, Event::StatusUpdated(tx_id, TransactionStatus::Pending));
     }
 
     // TODO(#33): verify each tx_id exists and has status Completed
@@ -222,7 +234,7 @@ mod tests {
     use super::*;
     use crate::storage::{StorageKey, MAX_ASSETS};
     use soroban_sdk::{
-        testutils::{storage::Persistent, Address as _, Events as _},
+        testutils::{storage::Persistent, Address as _, Events as _, Ledger as _},
         vec,
         Env, IntoVal, String as SorobanString, symbol_short,
     };
@@ -422,5 +434,57 @@ mod tests {
             &2u64,
             &1u64,
         );
+    }
+
+    #[test]
+    fn test_retry_dlq_success() {
+        let env = Env::default();
+        let (client, relayer, tx_id) = setup_relayer_deposit(&env, "retry-tx");
+        let admin = client.address.clone(); // The client address is the admin in setup
+        // Wait, let's check setup again.
+        // fn setup(env: &Env) -> (Address, Address) {
+        //     env.mock_all_auths();
+        //     let contract_id = env.register_contract(None, SynapseContract);
+        //     let client = SynapseContractClient::new(env, &contract_id);
+        //     let admin = Address::generate(env);
+        //     client.initialize(&admin);
+        //     (admin, contract_id)
+        // }
+        // Oh, setup returns (admin, contract_id).
+        // My setup_relayer_deposit:
+        // fn setup_relayer_deposit<'a>(
+        //     env: &'a Env,
+        //     anchor_label: &str,
+        // ) -> (SynapseContractClient<'a>, Address, SorobanString) {
+        //     let (admin, contract_id) = setup(env);
+        //     ...
+        //     (client, relayer, tx_id)
+        // }
+        // It doesn't return admin. I should probably get admin from storage or modify setup_relayer_deposit.
+        // Let's use env.as_contract to get admin from storage.
+        
+        let admin = env.as_contract(&client.address, || storage::admin::get(&env));
+        let err = SorobanString::from_str(&env, "failed-initially");
+        
+        // 1. Mark as failed
+        client.mark_failed(&relayer, &tx_id, &err);
+        let tx_failed = client.get_transaction(&tx_id);
+        assert!(matches!(tx_failed.status, TransactionStatus::Failed));
+        
+        // 2. Retry DLQ
+        env.ledger().set_sequence_number(100); // Advance ledger to check updates
+        client.retry_dlq(&admin, &tx_id);
+        
+        // 3. Verify Transaction
+        let tx_retried = client.get_transaction(&tx_id);
+        assert!(matches!(tx_retried.status, TransactionStatus::Pending));
+        assert_eq!(tx_retried.updated_ledger, 100);
+        
+        // 4. Verify DLQ Entry
+        let entry = env.as_contract(&client.address, || {
+            storage::dlq::get(&env, &tx_id).unwrap()
+        });
+        assert_eq!(entry.retry_count, 1);
+        assert_eq!(entry.last_retry_ledger, 100);
     }
 }
