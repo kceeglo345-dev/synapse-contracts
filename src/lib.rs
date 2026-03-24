@@ -184,9 +184,14 @@ impl SynapseContract {
         if period_start > period_end {
             panic!("period_start must be <= period_end")
         }
-        let s = Settlement::new(&env, asset_code.clone(), tx_ids, total_amount, period_start, period_end);
+        let s = Settlement::new(&env, asset_code.clone(), tx_ids.clone(), total_amount, period_start, period_end);
         let id = s.id.clone();
         settlements::save(&env, &s);
+        for tx_id in tx_ids.iter() {
+            let mut tx = deposits::get(&env, &tx_id);
+            tx.settlement_id = id.clone();
+            deposits::save(&env, &tx);
+        }
         emit(&env, Event::SettlementFinalized(id.clone(), asset_code, total_amount));
         id
     }
@@ -403,6 +408,22 @@ mod tests {
             &admin,
             &SorobanString::from_str(&env, "OVERFLOW"),
         );
+    }
+
+    #[test]
+    fn test_finalize_settlement_writes_settlement_id_back_onto_transactions() {
+        let env = Env::default();
+        let (client, relayer, tx_id) = setup_relayer_deposit(&env, "settle-backref");
+        let settlement_id = client.finalize_settlement(
+            &relayer,
+            &SorobanString::from_str(&env, "USD"),
+            &vec![&env, tx_id.clone()],
+            &1i128,
+            &0u64,
+            &1u64,
+        );
+        let tx = client.get_transaction(&tx_id);
+        assert_eq!(tx.settlement_id, settlement_id);
     }
 
     #[test]
