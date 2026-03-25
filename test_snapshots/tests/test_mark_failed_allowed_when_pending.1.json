@@ -93,7 +93,8 @@
                 },
                 {
                   "string": "USD"
-                }
+                },
+                "void"
               ]
             }
           },
@@ -348,6 +349,12 @@
                       "val": {
                         "string": "0"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "memo"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -924,7 +931,8 @@
                 },
                 {
                   "string": "USD"
-                }
+                },
+                "void"
               ]
             }
           }
@@ -1157,6 +1165,12 @@
                   "val": {
                     "string": "0"
                   }
+                },
+                {
+                  "key": {
+                    "symbol": "memo"
+                  },
+                  "val": "void"
                 },
                 {
                   "key": {
