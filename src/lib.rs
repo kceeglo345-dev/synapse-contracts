@@ -1,5 +1,7 @@
 #![no_std]
 
+extern crate alloc;
+
 mod access;
 mod events;
 mod storage;
